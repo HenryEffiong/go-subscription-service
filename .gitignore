@@ -1,2 +1,4 @@
 
 *.stat
+/db-data/
+*.init
