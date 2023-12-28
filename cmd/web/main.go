@@ -145,6 +145,11 @@ func (app *Config) shutdown() {
 
 	// block until waitgroup is empty
 	app.Wait.Wait()
+	app.Mailer.DoneChan <- true
+
+	close(app.Mailer.ErrorChan)
+	close(app.Mailer.DoneChan)
+	close(app.Mailer.MailerChan)
 
 	app.InfoLog.Println("closing channels and shutting down application...")
 
