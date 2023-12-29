@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/gob"
 	"fmt"
 	"log"
 	"net/http"
@@ -26,6 +27,8 @@ func main() {
 	// connect to DB
 	db := initDB()
 	db.Ping()
+
+	gob.Register(data.User{})
 
 	// create sessions
 	session := initSession()

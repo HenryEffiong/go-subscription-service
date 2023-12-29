@@ -1,6 +1,11 @@
 package main
 
-import "net/http"
+import (
+	"fmt"
+	"html/template"
+	"net/http"
+	"subscription/data"
+)
 
 func (app *Config) HomePage(w http.ResponseWriter, r *http.Request) {
 	app.render(w, r, "home.page.gohtml", nil)
@@ -74,19 +79,130 @@ func (app *Config) RegisterPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) PostRegisterPage(w http.ResponseWriter, r *http.Request) {
+	// parse form post
+	err := r.ParseForm()
+	if err != nil {
+		app.ErrorLog.Println(err)
+	}
+
+	// TODO - validata data
+
 	// create a user
+	user := data.User{
+		Email:     r.Form.Get("email"),
+		FirstName: r.Form.Get("first-name"),
+		LastName:  r.Form.Get("last-name"),
+		Password:  r.Form.Get("password"),
+		Active:    0,
+		IsAdmin:   0,
+	}
+
+	_, err = user.Insert(user)
+	if err != nil {
+		app.ErrorLog.Println(err)
+		app.Session.Put(r.Context(), "error", "Unable to register user.")
+		http.Redirect(w, r, "/register", http.StatusSeeOther)
+		return
+	}
 
 	// send an activation email
+	url := fmt.Sprintf("http://localhost/activate?email=%s", user.Email)
+	signedURL := GenerateTokenFromString(url)
+	app.InfoLog.Println(signedURL)
 
-	// subscbribe the user to an account
+	msg := Message{
+		To:       user.Email,
+		Subject:  "Activate your account",
+		Data:     template.HTML(signedURL),
+		Template: "confirmation-email",
+	}
+
+	app.sendEmail(msg)
+
+	app.Session.Put(r.Context(), "flash", "Confirmation email sent! Check your email.")
+
+	// redirect the user
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+
 }
 
 func (app *Config) ActivateAccount(w http.ResponseWriter, r *http.Request) {
 	// validate url
+	url := r.RequestURI
+	testURL := fmt.Sprintf("http://localhost%s", url)
+	okay := VerifyToken(testURL)
+
+	if !okay {
+		app.Session.Put(r.Context(), "error", "Invalid token.")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	// activate account
+	u, err := app.Models.User.GetByEmail(r.URL.Query().Get("email"))
+	if err != nil {
+		app.Session.Put(r.Context(), "error", "No user found.")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	u.Active = 1
+	err = u.Update()
+	if err != nil {
+		app.Session.Put(r.Context(), "error", "Unable to update user.")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	app.Session.Put(r.Context(), "flash", "Account activated. You can now log in.")
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 
 	// generate an invoice
 
 	// send an email with attachments
 
 	// send an email with the invoice attached
+
+	// subscribe the user to an account
+}
+
+func (app *Config) ChooseSubscription(w http.ResponseWriter, r *http.Request) {
+	if !app.Session.Exists(r.Context(), "userID") {
+		app.Session.Put(r.Context(), "warning", "You must log in to see this page!")
+		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+		return
+	}
+
+	plans, err := app.Models.Plan.GetAll()
+	if err != nil {
+		app.ErrorLog.Println(err)
+		return
+	}
+
+	dataMap := make(map[string]any)
+	dataMap["plans"] = plans
+
+	app.render(w, r, "plans.page.gohtml", &TemplateData{
+		Data: dataMap,
+	})
+}
+
+func (app *Config) SubcribeToPlan(w http.ResponseWriter, r *http.Request) {
+	// get the id of the plan that is chosen
+
+	// get the plan from the database
+
+	// get the user from the session
+
+	// generate an invoice
+
+	// send an email with the invoice attached
+
+	// generate a manual
+
+	// send an email with the manual attached
+
+	// subscribe the user to an account
+
+	// redirect
 }
