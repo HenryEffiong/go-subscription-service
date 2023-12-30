@@ -42,17 +42,22 @@ func main() {
 
 	// set up application config
 	app := Config{
-		Session:  session,
-		DB:       db,
-		Wait:     &wg,
-		InfoLog:  infoLog,
-		ErrorLog: errorLog,
-		Models:   data.New(db),
+		Session:       session,
+		DB:            db,
+		Wait:          &wg,
+		InfoLog:       infoLog,
+		ErrorLog:      errorLog,
+		Models:        data.New(db),
+		ErrorChan:     make(chan error),
+		ErrorChanDone: make(chan bool),
 	}
 
 	// set up mail
 	app.Mailer = app.createMail()
 	go app.listenForMail()
+
+	// listen for errors
+	go app.listenForErrors()
 
 	// shutdown gracefully
 	go app.listenForShutdown()
@@ -60,6 +65,17 @@ func main() {
 	// start webserver
 	app.serve()
 
+}
+
+func (app *Config) listenForErrors() {
+	for {
+		select {
+		case err := <-app.ErrorChan:
+			app.ErrorLog.Println(err)
+		case <-app.ErrorChanDone:
+			return
+		}
+	}
 }
 
 func (app *Config) serve() {
@@ -142,6 +158,7 @@ func (app *Config) listenForShutdown() {
 	app.shutdown()
 	os.Exit(0)
 }
+
 func (app *Config) shutdown() {
 	// perform clean up tasks
 	app.InfoLog.Println("running clean up tasks...")
@@ -149,10 +166,13 @@ func (app *Config) shutdown() {
 	// block until waitgroup is empty
 	app.Wait.Wait()
 	app.Mailer.DoneChan <- true
+	app.ErrorChanDone <- true
 
 	close(app.Mailer.ErrorChan)
 	close(app.Mailer.DoneChan)
 	close(app.Mailer.MailerChan)
+	close(app.ErrorChan)
+	close(app.ErrorChanDone)
 
 	app.InfoLog.Println("closing channels and shutting down application...")
 

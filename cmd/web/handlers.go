@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 	"subscription/data"
 )
 
@@ -167,11 +168,11 @@ func (app *Config) ActivateAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) ChooseSubscription(w http.ResponseWriter, r *http.Request) {
-	if !app.Session.Exists(r.Context(), "userID") {
-		app.Session.Put(r.Context(), "warning", "You must log in to see this page!")
-		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
-		return
-	}
+	// if !app.Session.Exists(r.Context(), "userID") {
+	// 	app.Session.Put(r.Context(), "warning", "You must log in to see this page!")
+	// 	http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+	// 	return
+	// }
 
 	plans, err := app.Models.Plan.GetAll()
 	if err != nil {
@@ -189,12 +190,46 @@ func (app *Config) ChooseSubscription(w http.ResponseWriter, r *http.Request) {
 
 func (app *Config) SubcribeToPlan(w http.ResponseWriter, r *http.Request) {
 	// get the id of the plan that is chosen
+	id := r.URL.Query().Get("id")
+
+	planID, _ := strconv.Atoi(id)
 
 	// get the plan from the database
+	plan, err := app.Models.Plan.GetOne(planID)
+	if err != nil {
+		app.Session.Put(r.Context(), "error", "Unable to find plan.")
+		http.Redirect(w, r, "/members/plans", http.StatusSeeOther)
+		return
+	} 
 
 	// get the user from the session
+	user, ok := app.Session.Get(r.Context(),"userID").(data.User)
+	if !ok {
+		app.Session.Put(r.Context(), "error", "Log in first!")
+		http.Redirect(w, r, "/members/plans", http.StatusSeeOther)
+		return
+	}
 
 	// generate an invoice
+	app.Wait.Add(1)
+
+	go func() {
+		defer app.Wait.Done()
+
+		invoice, err := app.getInvoice(user, plan)
+		if err != nil {
+			app.ErrorChan <- err
+		}
+
+		msg := Message{
+			To:       user.Email,
+			Subject:  "Your invoice",
+			Data:     invoice,
+			Template: "invoice",
+		}
+
+		app.sendEmail(msg)
+	}()
 
 	// send an email with the invoice attached
 
@@ -205,4 +240,8 @@ func (app *Config) SubcribeToPlan(w http.ResponseWriter, r *http.Request) {
 	// subscribe the user to an account
 
 	// redirect
+}
+
+func (app *Config) getInvoice(u data.User, plan *data.Plan) (string, error) {
+	return plan.PlanAmountFormatted, nil
 }

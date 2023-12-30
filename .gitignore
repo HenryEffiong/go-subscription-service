@@ -2,3 +2,6 @@
 *.stat
 /db-data/
 *.init
+.DS_Store
+cmd/.DS_Store
+pdf/DS_Store
